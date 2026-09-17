@@ -1,0 +1,3 @@
+model,TF_core_claim,TF_topk_mass_ratio,EA_method,EA_spearman_mean,EA_spearman_std,SE_seqkan_sparsity_eps,SE_gru_compress_q90,SE_gru_weights_active_frac_eps,SE_gru_hidden_active_frac_eps,AD_pass_rate,AD_rules_n
+seqKAN,1.0,0.13753239104265397,gradxinput,0.5006841514016153,0.0005586072802558824,0.28214285714285714,,,,0.25,4
+GRU,0.0,,gradxinput,0.5006841514016153,0.0005586072802558824,,0.9000191008284985,0.9158608504643889,1.0,0.5,4

@@ -1,0 +1,4 @@
+feature_idx,hidden_j,output_m,w_mj,k,csv_path
+8,15,2,0.7006396055221558,3,/home/ferna/CPE727-2025-03/Seminarios/6 - RNN/seqKAN_results/kan_function_i8_j15_m2_k3.csv
+6,17,2,-0.42732521891593933,3,/home/ferna/CPE727-2025-03/Seminarios/6 - RNN/seqKAN_results/kan_function_i6_j17_m2_k3.csv
+4,9,4,0.43483516573905945,3,/home/ferna/CPE727-2025-03/Seminarios/6 - RNN/seqKAN_results/kan_function_i4_j9_m4_k3.csv

@@ -1,0 +1,319 @@
+\documentclass[conference]{IEEEtran}
+
+\makeatletter
+\def\ps@IEEEtitlepagestyle{%
+  \def\@oddfoot{\mycopyrightnotice}%
+  \def\@evenfoot{}%
+}
+\def\mycopyrightnotice{%
+  {\footnotesize XXX-X-XXXX-XXXX-X/XX/\$XX.00~\copyright~20XX IEEE\hfill}%
+  \gdef\mycopyrightnotice{}%
+}
+\makeatother
+
+\usepackage{eso-pic}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{microtype}
+\usepackage{balance}
+
+\newcommand\AtPageUpperMyright[1]{\AtPageUpperLeft{%
+ \put(\LenToUnit{0.17\paperwidth},\LenToUnit{-2cm}){%
+     \parbox{0.9\textwidth}{\raggedleft\fontsize{8}{11}\selectfont #1}}%
+ }}%
+\newcommand{\conf}[1]{%
+\AddToShipoutPictureBG*{%
+\AtPageUpperMyright{#1}%
+}%
+}
+
+\graphicspath{{seqkan_ieee_assets/}}
+
+\begin{document}
+
+\title{\vspace*{1cm}Auditable seqKAN Forecasting for Process Safety Decision Support in Industrial Compressor Digital Twins}
+
+\author{%
+\IEEEauthorblockN{Fernanda Mickosz Villa Verde, Rodrigo Petrus Domingues, Natanael N. Moura Junior, and Jo\~ao Victor F. Pinto}
+\IEEEauthorblockA{\textit{Signal Processing Laboratory, COPPE, Federal University of Rio de Janeiro}\\
+Rio de Janeiro, Brazil\\
+Corresponding author: fernandamvv@lps.ufrj.br}}
+
+\maketitle
+
+\conf{\textit{Proc. of International Conference on Artificial Intelligence, Computer, Data Sciences and Applications (ACDSA 2027) \\
+2--4 February 2027, Rio de Janeiro--Brazil}}
+
+\begin{abstract}
+Industrial digital twins used for process-safety support require predictive models that combine accuracy with evidence suitable for engineering review. This paper evaluates seqKAN, a recurrent sequence model based on Kolmogorov--Arnold Networks (KANs), on multivariate telemetry from an offshore centrifugal compressor and compares it with a gated recurrent unit (GRU). seqKAN achieved slightly lower test mean squared error (MSE) in compact configurations with hidden dimensions 8 and 24, while the GRU was clearly better at dimension 352. Explainability was assessed through four complementary dimensions: inspection of learned spline functions, stability of feature rankings under perturbation, model-specific structural sparsity and engineering shape checks. For the 24-unit models, seqKAN produced more stable rankings under an auxiliary global- econstruction permutation diagnostic
+($\rho=0.916$ versus $0.795$). Architecture-specific structural sparsity proxies classified 71.8\% of seqKAN edges and 91.6\% of GRU parameters as active, but these quantities are not directly comparable. In the original exploratory shape-check protocol,
+seqKAN passed one of four checks and the GRU passed two. The results indicate an accuracy--auditability trade-off rather than universal superiority. They also show that intrinsic transparency does not guarantee physically plausible behaviour, motivating shape constraints, temporally independent evaluation and explicit governance before safety-related deployment.
+\end{abstract}
+
+\begin{IEEEkeywords}
+process safety, digital twin, explainable artificial intelligence, Kolmogorov--Arnold Networks, seqKAN, compressor forecasting
+\end{IEEEkeywords}
+
+\section{Introduction}
+Digital twins in the process industries connect operational data, computational models and decision-support services to support monitoring, prediction and engineering analysis \cite{perno2022,peterson2025}. In offshore gas compression, the underlying signals are strongly coupled: pressure, temperature, flow, shaft power, efficiency and control actions evolve jointly, while abnormal behaviour can contribute to equipment degradation, production loss and hazardous escalation. For such applications, predictive accuracy alone is insufficient. The model must also support traceability, critical review and a clear statement of its operating limits.
+
+This requirement is particularly relevant for explainable artificial intelligence (XAI). Time-series XAI includes feature attribution, subsequence explanations and model-specific interpretation, but the adequacy of an explanation depends on how it is evaluated and on the intended user \cite{theissler2022}. For high-consequence decisions, inherently interpretable models can be preferable to opaque predictors complemented only by post-hoc explanations \cite{rudin2019}. Nevertheless, transparency should be treated as evidence to be validated rather than as a guarantee of correctness.
+
+KANs replace fixed node activations and scalar edge weights with learnable univariate functions, typically represented by splines \cite{liu2024}. seqKAN extends this principle to sequential data by embedding recurrence directly in a KAN-based state update. Its original evaluation showed strong interpolation and extrapolation on synthetic physics sequences while retaining visual access to learned functions \cite{boura2025}. Whether this advantage transfers to noisy industrial telemetry, and whether the resulting explanations are stable and engineering-consistent, remains an open question.
+
+This paper evaluates seqKAN using public compressor data from Aker BP's Valhall field, made available through the Cognite Open Industrial Data project \cite{cognite2018}, and compares it with a GRU baseline \cite{cho2014}. The contribution is not a claim that seqKAN is universally more accurate. Instead, we frame interpretability as an auditable evidence package comprising: (i) functional transparency, (ii) perturbation stability, (iii) structural sparsity, and (iv) engineering validity. This framing is consistent with the broader need to evaluate explanation methods rather than relying on visual plausibility alone \cite{adebayo2018}. Figure~\ref{fig:workflow} summarizes the proposed forecasting-and-assurance workflow: telemetry and observation masks feed the recurrent KAN model, while the resulting forecast is accompanied by explanation evidence before it reaches a digital-twin decision-support service.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.88\textwidth]{figs/fig1_seqkan_workflow.png}
+\caption{Forecasting and explainability workflow for the compressor digital twin. Model outputs are complemented by functional inspection, perturbation stability, structural sparsity and engineering checks before operator-facing use.}
+\label{fig:workflow}
+\end{figure*}
+
+\section{Data and Methods}
+\subsection{Industrial Data and Forecasting Protocol}
+The dataset contains measurements from the first-stage centrifugal compressor 23-KA-9101 on the Valhall PH platform. Data between 1 September and 1 December 2019 were retrieved as two-second averages. Twelve associated time series were initially collected; one empty channel was removed, leaving $C=11$ inputs. The evaluated outputs were four compressor-performance variables: actual first-stage polytropic head, shaft power, polytropic efficiency and pressure ratio.
+
+Missing observations were represented by a binary mask and replaced by zero only in the numerical input. Each channel was robustly scaled with statistics fitted on the training subset. Non-overlapping windows contained 10 samples (20 s); during training and evaluation the final sample was hidden and reconstructed from the preceding nine samples. The task is therefore a one-step-ahead multivariate reconstruction with an effective horizon of two seconds, rather than unrestricted multi-step forecasting.
+
+Windows were grouped by inferred operating state and randomly split within each group into 60\% training, 20\% validation and 20\% test subsets using seed 42. The test subset contained 5,396 windows (4,869 from state 0 and 527 from state 1). This state-stratified random split is an important limitation because it does not provide a temporally independent holdout.
+
+\subsection{seqKAN and GRU Models}
+Let $x_t\in\mathbb{R}^{C}$ be the measurement vector,
+$\tilde{M}_t\in\{0,1\}^{C}$ the effective observation mask,
+and $h_t\in\mathbb{R}^{d_h}$ the hidden state. The seqKAN
+cell receives the masked current measurements, the previous
+hidden state, and a missingness-dependent hidden-state component:
+\begin{equation}
+\begin{aligned}
+\widetilde{x}_t
+    &= x_t \odot \widetilde{M}_t,\\
+m_t
+    &= W_m(1-\widetilde{M}_t)+b_m,\\
+u_t
+    &= [\widetilde{x}_t,h_{t-1},
+        m_t\odot h_{t-1}].
+\end{aligned}
+\label{eq:input}
+\end{equation}
+The recurrent update and linear readout are
+\begin{equation}
+\begin{aligned}
+h_{t,j} &= \sum_i \phi_{ij}(u_{t,i}),\\
+\hat{x}_t
+    &= \operatorname{clip}
+       (W_o h_t+b_o,-3,3).
+\end{aligned}
+\label{eq:kan}
+\end{equation}
+where each $\phi_{ij}$ is a learned univariate edge function. The implementation used cubic B-splines with eight grid intervals and spline order three over the robust-scaled range $[-3,3]$. The GRU used the same input windows, masks, split indices and hidden dimensions $d_h\in\{8,24,352\}$. For the active seqKAN forward path, the trainable parameter count is
+\begin{equation}
+P(d_h)=(C+2d_h)d_h(G+k)+(C+1)d_h+(d_h+1)C,
+\label{eq:params}
+\end{equation}
+which becomes $22d_h^2+144d_h+11$ for $C=11$, $G=8$ and $k=3$. This gives 2,571, 16,139 and 2,776,587 active parameters for $d_h=8$, 24 and 352, respectively. The quadratic growth helps explain why the largest KAN configuration is computationally expensive and why compact models are particularly relevant to the auditability question.
+
+Both architectures were trained with RAdam, learning rate $2\times10^{-4}$, batch size 512 and gradient clipping at 1.0. The objective was masked reconstruction error on the four evaluated channels. The reported predictive values are from single trained runs. The nominal training limit was 500 epochs for $d_h=8$ and 352 and 1,000 epochs for the principal $d_h=24$ seqKAN model. Early stopping used a patience of 20 epochs; the recorded seqKAN runs stopped after 166, 375 and 86 epochs, respectively. The window split and KAN initialization used seed 42, but a global seed was not reset for all PyTorch, NumPy and CUDA operations. Random masking, parameter initialization and weighted sampling were therefore not fully reproducible across hypothetical reruns.
+
+The explainability analyses described below were performed after training and were not part of the optimization objective
+
+\subsection{Explainability as an Assurance Package}
+Four diagnostics were evaluated on the compact $d_h=24$ models. First, \emph{functional transparency} was assessed by ranking feature--hidden--output paths and inspecting the learned spline $\phi_{ij}$ together with its
+signed same-step readout contribution
+$w_{mj}\phi_{ij}(u_{t,i})$. This quantity exposes local sign, slope and saturation, but it is not a causal effect because recurrent state and other edges also contribute.
+
+Second, \emph{attribution stability} 
+was evaluated by perturbing the input window and recomputing feature rankings. Permutation-based importance was used as a model-reliance diagnostic [9], and Integrated Gradients (IG) was included as a complementary gradient attribution method [8]. Permutation importance was computed from the increase in multivariate reconstruction error after independently permuting each feature within the evaluation windows. Stability was summarized by Spearman rank correlation with the unperturbed ranking.
+
+Third, \emph{structural sparsity} was characterized using architecture-specific relative thresholds. For seqKAN, an edge was active when its score exceeded 1\% of the maximum edge score; for the GRU, analogous thresholds were applied to parameter magnitudes and hidden activations. These are structural sparsity proxies defined within each architecture and must not be interpreted as directly equivalent quantitative measures across architectures.
+
+Fourth, four exploratory \emph{engineering shape checks} tested sign, monotonicity and saturation relationships between selected expected and actual compressor variables. The rules were: (1) increasing expected pressure ratio from scaled $-1$ to $+1$ should not reduce predicted shaft power; (2) predicted actual pressure ratio should be predominantly monotone increasing as expected pressure ratio varies over $[-3,3]$; (3) the shaft-power response should show reduced slope at high expected pressure ratio, represented by a saturation criterion above 1.5 in scaled space; and (4) increasing expected shaft power from $-1$ to $+1$ should not reduce predicted actual shaft power. Each rule returned a binary pass/fail result. The checks were manually specified and have not yet been validated against a compressor-performance standard or by a domain specialist; they are therefore plausibility tests, not certified physical constraints.
+
+\section{Results}
+\subsection{Prediction Accuracy Depends on Model Capacity}
+Table~\ref{tab:mse} summarizes test MSE. seqKAN was slightly better in compact configurations: at $d_h=8$, MSE was $0.173\pm0.004$ versus $0.178\pm0.004$ for the GRU; at $d_h=24$, it was $0.159\pm0.003$ versus $0.163\pm0.003$. At $d_h=352$, the ordering reversed and the GRU achieved $0.146\pm0.003$ compared with $0.169\pm0.004$ for seqKAN. The values following $\pm$ are estimated standard errors from window-level errors, not variation across repeated training seeds. Thus, the compact results support competitiveness but not a formal claim of statistical superiority.
+
+\begin{table}[t]
+\centering
+\caption{Predictive performance across hidden dimensions. Lower MSE is better.}
+\label{tab:mse}
+\footnotesize
+\begin{tabular}{ccc}
+\toprule
+$ d_h $ & seqKAN test MSE & GRU test MSE \\
+\midrule
+8   & $0.173\pm0.004$ & $0.178\pm0.004$ \\
+24  & $0.159\pm0.003$ & $0.163\pm0.003$ \\
+352 & $0.169\pm0.004$ & $0.146\pm0.003$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.94\columnwidth]{figs/fig2_predictive_performance.png}
+\caption{Test MSE versus hidden dimension. seqKAN is slightly better in compact models, while the GRU is clearly better at the largest tested capacity.}
+\label{fig:performance}
+\end{figure}
+
+\subsection{Learned Functions Expose Inspectable Local Behaviour}
+For the 24-unit seqKAN, dominant paths exhibited distinct
+nonlinear responses over the scaled range $[-3,3]$. The path
+from expected shaft power (feature 8) through hidden unit 15 to
+actual shaft power (output 2) increased its signed contribution
+by approximately $+0.752$ across the range. The path from actual
+compressor polytropic efficiency (feature 6) through hidden unit
+17 to actual shaft power decreased by approximately $-0.310$.
+A third path, from actual compressor polytropic head (feature 4)
+through hidden unit 9 to the same actual-head output (output 4),
+increased by approximately $+0.384$.
+Figure~\ref{fig:functions} shows these intrinsic edge functions alongside partial-dependence views. The latter are used only as a consistency check; the KAN splines themselves are the directly inspectable model components.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.82\textwidth]{figs/fig3_functional_transparency.png}
+\caption{Functional transparency of the compact seqKAN model.
+The selected paths connect expected shaft power to actual shaft
+power (top), actual polytropic efficiency to actual shaft power
+(middle), and actual polytropic head to its reconstructed output
+(bottom). Learned spline functions and their weighted
+contributions (left) are compared with exploratory
+partial-dependence views (right).}
+\label{fig:functions}
+\end{figure*}
+
+\subsection{Auditability Metrics Reveal Complementary Strengths
+and Weaknesses}
+
+Under an auxiliary global-reconstruction diagnostic,
+permutation-window rankings were more stable for seqKAN, with
+$\rho=0.9159\pm0.1141$, compared with
+$0.7953\pm0.1208$ for the GRU. This diagnostic measured model
+reliance using reconstruction error over the complete evaluation
+window and all 11 channels.
+
+IG produced nearly perfect correlations for both models
+(1.0000 and 0.9994), while gradient$\times$input was
+approximately 0.50 for both. These gradient-based diagnostics
+aggregated the last-step outputs over all channels and should be
+interpreted as exploratory stability measurements rather than
+task-aligned explanation-quality scores. The differences among
+the three methods reinforce the need to report the attribution
+method and target definition explicitly.
+
+Under architecture-specific relative thresholds, 71.79\% of seqKAN edges, 91.59\% of GRU parameters and 100\% of GRU hidden units were classified as active. These structural sparsity proxies indicate a lower active fraction within the seqKAN
+functional graph under the adopted criterion. However, because the counted objects and thresholds differ across architectures,
+the values should not be interpreted as a direct quantitative comparison of sparsity.
+
+In the original exploratory shape-check protocol, seqKAN passed
+one of four manually specified checks, whereas the GRU passed
+two. These outcomes are preliminary because the checks used a
+separate evaluation-window construction and were not validated
+against an engineering standard. The inspectable seqKAN
+functions made the identified problematic responses directly
+visible, but intrinsic interpretability did not prevent the model
+from learning responses that violated the specified engineering
+expectations. Figure~\ref{fig:diagnostics} summarizes these
+exploratory diagnostics.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figs/fig4_explainability_diagnostics.png}
+\caption{Complementary explainability diagnostics: attribution stability, model-specific structural sparsity proxies and engineering shape-check pass rate. Structural sparsity proxies are not directly equivalent across architectures.}
+\label{fig:diagnostics}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{Explainability evidence for the $d_h=24$ models.}
+\label{tab:xai}
+\scriptsize
+\renewcommand{\arraystretch}{1.15}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{@{}p{2.5cm}cc@{}}
+\toprule
+Criterion & seqKAN & GRU \\
+\midrule
+Permutation stability $\rho$ & $0.9159\pm0.1141$ & $0.7953\pm0.1208$ \\
+IG stability $\rho$ & $1.0000$ & $0.9994$ \\
+Structural sparsity & 0.7179 edges & 0.9159 weights \\
+Engineering checks & 1/4 & 2/4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The evidence dimensions answer complementary questions. Prediction error assesses reconstruction performance; functional and attribution diagnostics assess inspectability and explanation stability; structural sparsity characterizes the relative concentration of active model elements within each architecture; and engineering checks assess consistency with prior expectations. None of these measures subsumes the others. In particular, the best-performing high-capacity GRU is not automatically the most auditable model, while the more inspectable seqKAN is not automatically the most engineering-consistent model.
+
+\section{Discussion}
+The results support an accuracy--auditability trade-off. In compact configurations, seqKAN retained competitive MSE while exposing explicit feature-to-state functions and producing more stable permutation-based rankings. At the largest tested capacity, however, the GRU was substantially more accurate. Model choice should therefore depend on the intended assurance case: a compact interpretable model can be attractive when engineering review and traceability are first-order requirements, whereas a higher-capacity recurrent model may be preferable when predictive accuracy dominates and a separate explanation layer is acceptable.
+
+The engineering checks provide the most important caution. Inspectable functions can still be physically implausible. For safety-related use, transparency should be combined with constraints and validation: monotonicity or bounded-derivative penalties, saturation priors, uncertainty estimation, out-of-distribution detection and temporal drift monitoring. More generally, transparent, explainable and interpretable behaviour should be documented as part of a governed risk-management process rather than treated as a stand-alone visualization feature \cite{nist2023}.
+
+A digital-twin implementation should consequently store the explanation as a first-class data product together with the forecast: input window and timestamps, model and dataset versions, dominant paths, signed contributions, uncertainty, domain-check status and validated operating regime. This creates a traceable object that can be reviewed by operators, process engineers and assurance teams, consistent with the broader digital-twin requirement for governed integration of data and models \cite{perno2022,peterson2025}.
+
+The present evidence remains exploratory. The study uses one
+compressor dataset, one recurrent baseline and single training
+runs. Although the feature indices have now been mapped to
+the corresponding compressor variables, the four engineering
+checks still require validation by domain specialists. A
+confirmatory experiment should use paired temporal folds or an
+expanding-window design, repeat each architecture across several
+fully controlled seeds, and report paired effect sizes with
+uncertainty across folds or runs. Such a protocol would provide
+stronger evidence of generalization under realistic deployment
+conditions, where temporally adjacent observations are correlated
+and compressor operating regimes may change over time.
+
+From a process-safety perspective, the model should remain decision support rather than an autonomous protection layer. The present use case does not issue shutdown commands or modify control-system set points. Any future link to safety-related recommendations would require a documented operating envelope, uncertainty thresholds, out-of-distribution safeguards, human review and independent validation of the engineering rules.
+
+\section{Conclusion}
+seqKAN offers a useful mechanism for exposing nonlinear temporal relationships in an industrial compressor model, but its value lies in auditability rather than guaranteed accuracy or physical correctness. Compact seqKAN models were competitive with a GRU and produced more stable permutation-based feature rankings, while the high-capacity GRU achieved the best MSE. The engineering checks further showed that intrinsic transparency does not remove the need for domain constraints.
+
+Future work should use temporally blocked or expanding-window
+evaluation, repeated seeds, stronger forecasting baselines and
+validated engineering rules. Building on the mapping of spline
+paths to named process variables, the next step is to incorporate
+shape constraints directly into seqKAN and assess the consistency
+of the learned relationships across operating regimes. This will
+allow predictive performance, explanation stability and engineering
+compliance to be evaluated jointly within the digital twin.
+
+\section*{Data and Code Availability}
+The measurements originate from the Cognite Open Industrial Data environment for the Valhall first-stage compressor. The experiments were implemented in Python/PyTorch using the project analysis pipeline. The experimental code is publicly available on GitHub at \url{https://github.com/fernandamvv/CPE727-2025-03}, under the directory \texttt{Seminarios/6 - RNN}. The repository contains the data-loading pipeline, seqKAN and GRU implementations, training notebooks, and explainability analysis scripts used to generate the results reported in this paper.
+
+\section*{Acknowledgment}
+
+
+\balance
+\begin{thebibliography}{00}
+\bibitem{perno2022} M. Perno, L. Hvam, and A. Haug, ``Implementation of digital twins in the process industry: A systematic literature review of enablers and barriers,'' \emph{Computers in Industry}, vol. 134, Art. no. 103558, 2022, doi: 10.1016/j.compind.2021.103558.
+
+\bibitem{peterson2025} L. Peterson, I. V. Gosea, P. Benner, and K. Sundmacher, ``Digital twins in process engineering: An overview on computational and numerical methods,'' \emph{Computers \& Chemical Engineering}, vol. 193, Art. no. 108917, 2025, doi: 10.1016/j.compchemeng.2024.108917.
+
+\bibitem{theissler2022} A. Theissler, F. Spinnato, U. Schlegel, and R. Guidotti, ``Explainable AI for time series classification: A review, taxonomy and research directions,'' \emph{IEEE Access}, vol. 10, pp. 100700--100724, 2022, doi: 10.1109/ACCESS.2022.3207765.
+
+\bibitem{rudin2019} C. Rudin, ``Stop explaining black box machine learning models for high stakes decisions and use interpretable models instead,'' \emph{Nature Machine Intelligence}, vol. 1, no. 5, pp. 206--215, 2019, doi: 10.1038/s42256-019-0048-x.
+
+\bibitem{liu2024} Z. Liu, Y. Wang, S. Vaidya, F. Ruehle, J. Halverson, M. Solja\v{c}i\'c, T. Y. Hou, and M. Tegmark, ``KAN: Kolmogorov--Arnold Networks,'' arXiv:2404.19756, 2024.
+
+\bibitem{boura2025} T. Boura and S. Konstantopoulos, ``seqKAN: Sequence processing with Kolmogorov--Arnold Networks,'' arXiv:2502.14681, 2025, doi: 10.48550/arXiv.2502.14681.
+
+\bibitem{cho2014} K. Cho, B. van Merri\"enboer, C. Gulcehre, D. Bahdanau, F. Bougares, H. Schwenk, and Y. Bengio, ``Learning phrase representations using RNN encoder--decoder for statistical machine translation,'' in \emph{Proc. EMNLP}, 2014, pp. 1724--1734.
+
+\bibitem{sundararajan2017} M. Sundararajan, A. Taly, and Q. Yan, ``Axiomatic attribution for deep networks,'' in \emph{Proc. 34th Int. Conf. Machine Learning (ICML)}, vol. 70, 2017, pp. 3319--3328.
+
+\bibitem{fisher2019} A. Fisher, C. Rudin, and F. Dominici, ``All models are wrong, but many are useful: Learning a variable's importance by studying an entire class of prediction models simultaneously,'' \emph{Journal of Machine Learning Research}, vol. 20, no. 177, pp. 1--81, 2019.
+
+\bibitem{adebayo2018} J. Adebayo, J. Gilmer, M. Muelly, I. Goodfellow, M. Hardt, and B. Kim, ``Sanity checks for saliency maps,'' in \emph{Advances in Neural Information Processing Systems}, vol. 31, 2018, pp. 9505--9515.
+
+\bibitem{nist2023} National Institute of Standards and Technology, \emph{Artificial Intelligence Risk Management Framework (AI RMF 1.0)}, NIST AI 100-1, Jan. 2023, doi: 10.6028/NIST.AI.100-1.
+
+\bibitem{cognite2018} Cognite and Aker BP, \emph{Open Industrial Data: Real Industrial Data from the Valhall Platform}, white paper, 2018. [Online]. Available: \url{https://www.cognite.com/hubfs/cognite-resources/2023-white-paper-open-industrial-data.pdf}
+\end{thebibliography}
+
+\end{document}

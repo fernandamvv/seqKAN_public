@@ -1,0 +1,5 @@
+type,ok,metric,feature,output,v_lo,v_hi,expected,note,vmin,vmax,threshold,n,sat_after,max_ratio
+sign_consistency,False,-0.5013430118560791,0,2,-1.0,1.0,positive,ExpPress Ratio -> ActShaft Power,,,,,,
+monotonic,False,0.673469387755102,0,9,,,increasing,ExpPress Ratio -> ActPress Ratio,-3.0,3.0,0.8,50.0,,
+saturation,False,1.686365689752493,0,2,,,,Saturation of power at high pressure ratio,-3.0,3.0,,60.0,1.5,0.35
+sign_consistency,True,1.2783901691436768,8,2,-1.0,1.0,positive,ExpShaft Power -> ActShaft Power,,,,,,
